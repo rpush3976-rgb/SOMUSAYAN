@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const querystring = require('querystring');
 
-// 🔥 HARDCODED KEYS (Environment variables ki zaroorat nahi)
+// 🔥 HARDCODED KEYS
 const TURNSTILE_SITE_KEY = '0x4AAAAAAEZYYn1-vYD-WxW';
 const TURNSTILE_SECRET_KEY = '0x4AAAAAAEZYYLwth6wkYRnr';
 const JWT_SECRET = 'Somu@2026#StrongKey';
@@ -135,57 +136,62 @@ module.exports = async (req, res) => {
 
         // ========== POST ==========
         else if (req.method === 'POST') {
-            const formData = await req.formData();
-            const url = formData.get('url');
-            const turnstileToken = formData.get('cf-turnstile-response');
+            // 🔥 MANUALLY PARSE FORM DATA
+            let body = '';
+            req.on('data', chunk => { body += chunk.toString(); });
+            req.on('end', async () => {
+                const formData = querystring.parse(body);
+                const url = formData.url;
+                const turnstileToken = formData['cf-turnstile-response'];
 
-            if (!turnstileToken) {
-                return res.status(400).send('❌ Turnstile required');
-            }
+                if (!turnstileToken) {
+                    return res.status(400).send('❌ Turnstile required');
+                }
 
-            // Turnstile verify
-            const verify = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    secret: TURNSTILE_SECRET_KEY,
-                    response: turnstileToken
-                })
+                // Turnstile verify
+                const verify = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        secret: TURNSTILE_SECRET_KEY,
+                        response: turnstileToken
+                    })
+                });
+                const data = await verify.json();
+
+                if (!data.success) {
+                    return res.status(400).send('❌ Turnstile failed');
+                }
+
+                // Generate JWT (120 sec expiry)
+                const token = jwt.sign(
+                    { url, exp: Math.floor(Date.now() / 1000) + 120 },
+                    JWT_SECRET
+                );
+                const link = APP_URL + '/api/go?t=' + token;
+
+                return res.send(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Link Generated</title>
+                    <style>
+                        body { background:#0a0f1a; color:#fff; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; }
+                        .box { background:#161b22; padding:30px; border-radius:16px; text-align:center; max-width:400px; width:90%; }
+                        .link { word-break:break-all; background:#0d1117; padding:10px; border-radius:8px; border:1px solid #30363d; }
+                        .btn { display:inline-block; margin-top:15px; color:#00d4ff; text-decoration:none; }
+                    </style>
+                    </head>
+                    <body>
+                    <div class="box">
+                        <h2 style="color:#00d4ff;">✅ Link Generated!</h2>
+                        <p class="link">${link}</p>
+                        <p style="color:#ffd700;">⏳ Valid for 90 seconds</p>
+                        <a href="/api/go" class="btn">Generate Another</a>
+                    </div>
+                    </body>
+                    </html>
+                `);
             });
-            const data = await verify.json();
-
-            if (!data.success) {
-                return res.status(400).send('❌ Turnstile failed');
-            }
-
-            // Generate JWT (120 sec expiry)
-            const token = jwt.sign(
-                { url, exp: Math.floor(Date.now() / 1000) + 120 },
-                JWT_SECRET
-            );
-            const link = APP_URL + '/api/go?t=' + token;
-
-            return res.send(`
-                <!DOCTYPE html>
-                <html>
-                <head><title>Link Generated</title>
-                <style>
-                    body { background:#0a0f1a; color:#fff; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; }
-                    .box { background:#161b22; padding:30px; border-radius:16px; text-align:center; max-width:400px; width:90%; }
-                    .link { word-break:break-all; background:#0d1117; padding:10px; border-radius:8px; border:1px solid #30363d; }
-                    .btn { display:inline-block; margin-top:15px; color:#00d4ff; text-decoration:none; }
-                </style>
-                </head>
-                <body>
-                <div class="box">
-                    <h2 style="color:#00d4ff;">✅ Link Generated!</h2>
-                    <p class="link">${link}</p>
-                    <p style="color:#ffd700;">⏳ Valid for 90 seconds</p>
-                    <a href="/api/go" class="btn">Generate Another</a>
-                </div>
-                </body>
-                </html>
-            `);
         }
 
         else {
