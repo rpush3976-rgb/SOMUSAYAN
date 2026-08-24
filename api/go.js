@@ -1,12 +1,12 @@
 const jwt = require('jsonwebtoken');
 
-// ---------- NEW KEYS (Updated) ----------
+// ---------- LATEST KEYS (Cloudflare se naye) ----------
 const SITE_KEY = '0x4AAAAAAEZyPDXp4YBdTb_W';
 const SECRET_KEY = '0x4AAAAAAEZyPFrVDaHt4I11';
 const JWT_SECRET = 'Somu@2026#StrongKey';
 const APP_URL = 'https://somusayan.vercel.app';
 
-// ---------- HELPER: POST body parse ----------
+// ---------- HELPER: POST body parse (Vercel ke liye) ----------
 function parseBody(req) {
     return new Promise((resolve) => {
         let body = '';
@@ -29,6 +29,7 @@ module.exports = async (req, res) => {
 
         // ========== GET ==========
         if (req.method === 'GET') {
+            // --- REVEAL (90 sec baad final URL dega) ---
             if (reveal && t) {
                 try {
                     const decoded = jwt.verify(t, JWT_SECRET);
@@ -42,16 +43,19 @@ module.exports = async (req, res) => {
                 }
             }
 
+            // --- FORM (Jab token nahi) ---
             if (!t) {
                 return res.send(`<!DOCTYPE html>
                 <html>
                 <head><title>Somusayan</title>
                 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
                 <style>
+                    * { margin:0; padding:0; box-sizing:border-box; }
                     body { display:flex; justify-content:center; align-items:center; height:100vh; background:#0a0f1a; font-family:sans-serif; color:#fff; }
                     .box { background:#161b22; padding:40px; border-radius:16px; text-align:center; max-width:400px; width:90%; }
-                    input, button { width:100%; padding:12px; margin:8px 0; border-radius:8px; border:1px solid #30363d; background:#0d1117; color:#fff; }
-                    button { background:#00d4ff; color:#000; font-weight:bold; border:none; }
+                    input, button { width:100%; padding:12px; margin:8px 0; border-radius:8px; border:1px solid #30363d; background:#0d1117; color:#fff; font-size:16px; }
+                    button { background:#00d4ff; color:#000; font-weight:bold; border:none; cursor:pointer; }
+                    button:hover { background:#00b8d4; }
                 </style>
                 </head>
                 <body>
@@ -67,20 +71,25 @@ module.exports = async (req, res) => {
                 </html>`);
             }
 
+            // --- BYPASS PAGE (Jab token hai) ---
             try {
                 const decoded = jwt.verify(t, JWT_SECRET);
-                if (Date.now() > decoded.exp * 1000) return res.send('<h1>Expired</h1>');
+                if (Date.now() > decoded.exp * 1000) {
+                    return res.send('<h1>⏰ Expired</h1><p>Generate new one.</p>');
+                }
+
                 return res.send(`<!DOCTYPE html>
                 <html>
                 <head><title>Bypass</title>
                 <style>
+                    * { margin:0; padding:0; box-sizing:border-box; }
                     body { display:flex; justify-content:center; align-items:center; height:100vh; background:#0a0f1a; font-family:monospace; color:#00ff88; }
-                    .box { background:#161b22; padding:30px; border-radius:16px; text-align:center; max-width:400px; }
+                    .box { background:#161b22; padding:30px; border-radius:16px; text-align:center; border:1px solid #00ff8844; max-width:400px; width:90%; }
                     .spin { width:40px; height:40px; border:4px solid #00ff8844; border-top:4px solid #00ff88; border-radius:50%; animation:spin 1s infinite; margin:auto; }
                     @keyframes spin { 100% { transform:rotate(360deg); } }
                     .pbar { width:100%; height:4px; background:#333; margin:15px 0; }
                     .pfill { height:100%; width:0%; background:#00ff88; transition:width 0.5s; }
-                    .log { text-align:left; background:#000; padding:10px; border-radius:8px; font-size:12px; max-height:80px; overflow-y:auto; }
+                    .log { text-align:left; background:#0d1117; padding:10px; border-radius:8px; font-size:12px; max-height:80px; overflow-y:auto; border:1px solid #30363d; }
                 </style>
                 </head>
                 <body>
@@ -115,7 +124,9 @@ module.exports = async (req, res) => {
                     }, 1000);
                 </script>
                 </body></html>`);
-            } catch (e) { return res.status(400).send('Invalid'); }
+            } catch (e) {
+                return res.status(400).send('❌ Invalid Token');
+            }
         }
 
         // ========== POST ==========
@@ -124,17 +135,32 @@ module.exports = async (req, res) => {
             const url = form.url;
             const turnstileToken = form['cf-turnstile-response'];
 
-            if (!turnstileToken) return res.status(400).send('Turnstile missing');
+            if (!turnstileToken) {
+                return res.status(400).send('❌ Turnstile missing');
+            }
 
+            // Turnstile Verify with error logging
             const verify = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ secret: SECRET_KEY, response: turnstileToken })
+                body: JSON.stringify({
+                    secret: SECRET_KEY,
+                    response: turnstileToken
+                })
             });
             const data = await verify.json();
-            if (!data.success) return res.status(400).send('Turnstile fail');
 
-            const token = jwt.sign({ url, exp: Math.floor(Date.now()/1000) + 120 }, JWT_SECRET);
+            // 🔥 Agar fail ho toh exact error batao
+            if (!data.success) {
+                const errorMsg = data['error-codes'] ? data['error-codes'].join(', ') : 'unknown error';
+                return res.status(400).send('❌ Turnstile fail: ' + errorMsg);
+            }
+
+            // Generate JWT (120 sec expiry)
+            const token = jwt.sign(
+                { url, exp: Math.floor(Date.now() / 1000) + 120 },
+                JWT_SECRET
+            );
             const link = APP_URL + '/api/go?t=' + token;
 
             return res.send(`<!DOCTYPE html>
@@ -142,21 +168,26 @@ module.exports = async (req, res) => {
             <head><title>Link</title>
             <style>
                 body { background:#0a0f1a; color:#fff; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; }
-                .box { background:#161b22; padding:30px; border-radius:16px; text-align:center; max-width:400px; }
+                .box { background:#161b22; padding:30px; border-radius:16px; text-align:center; max-width:400px; width:90%; }
+                .link { word-break:break-all; background:#0d1117; padding:10px; border-radius:8px; border:1px solid #30363d; }
+                .btn { display:inline-block; margin-top:15px; color:#00d4ff; text-decoration:none; }
             </style>
             </head>
             <body>
             <div class="box">
                 <h2 style="color:#00d4ff;">✅ Link Ready</h2>
-                <p style="word-break:break-all;">${link}</p>
-                <a href="/api/go" style="color:#00d4ff;">New</a>
+                <p class="link">${link}</p>
+                <p style="color:#ffd700;">⏳ Valid for 90 seconds</p>
+                <a href="/api/go" class="btn">Generate Another</a>
             </div>
             </body></html>`);
         }
 
-        else res.status(405).send('Method not allowed');
+        else {
+            res.status(405).send('Method not allowed');
+        }
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Server error: ' + err.message);
+        console.error('Server Error:', err);
+        res.status(500).send('❌ Server error: ' + err.message);
     }
 };
