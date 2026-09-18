@@ -1,2 +1,0 @@
-# SOMUSAYAN
-Bypass 
